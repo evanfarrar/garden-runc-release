@@ -8,6 +8,48 @@ export GOROOT=$(readlink -nf /var/vcap/packages/golang_1.6.1)
 export GOPATH=$BOSH_INSTALL_TARGET
 export PATH=$GOROOT/bin:$PATH
 
+pushd ${BOSH_INSTALL_TARGET}/src/github.com/cloudfoundry-incubator/garden-shed
+
+patch -p1 <<'EOF'
+diff --git a/docker_drivers/aufs/loop.go b/docker_drivers/aufs/loop.go
+index 030aa10..fb6f721 100644
+--- a/docker_drivers/aufs/loop.go
++++ b/docker_drivers/aufs/loop.go
+@@ -15,7 +15,7 @@ type Loop struct {
+ func (lm *Loop) MountFile(filePath, destPath string) error {
+ 	log := lm.Logger.Session("mount-file", lager.Data{"filePath": filePath, "destPath": destPath})
+ 
+-	output, err := exec.Command("mount", "-n", "-t", "ext4", "-o", "loop,noatime,data=writeback",
++	output, err := exec.Command("mount", "-n", "-t", "ext4", "-o", "loop,noatime",
+ 		filePath, destPath).CombinedOutput()
+ 	if err != nil {
+ 		log.Error("mounting", err, lager.Data{"output": string(output)})
+diff --git a/docker_drivers/aufs/loop_linux_test.go b/docker_drivers/aufs/loop_linux_test.go
+index 4cafaa6..7c6478c 100644
+--- a/docker_drivers/aufs/loop_linux_test.go
++++ b/docker_drivers/aufs/loop_linux_test.go
+@@ -65,7 +65,7 @@ var _ = Describe("LoopLinux", func() {
+ 	})
+ 
+ 	Describe("MountFile", func() {
+-		It("mounts the file with noatime and journal_data_writeback options", func() {
++		It("mounts the file with noatime but not the journal_data_writeback options", func() {
+ 			Expect(loop.MountFile(bsFilePath, destPath)).To(Succeed())
+ 
+ 			session, err := gexec.Start(exec.Command("losetup", "-j", bsFilePath), GinkgoWriter, GinkgoWriter)
+@@ -74,7 +74,8 @@ var _ = Describe("LoopLinux", func() {
+ 
+ 			session, err = gexec.Start(exec.Command("cat", "/proc/mounts"), GinkgoWriter, GinkgoWriter)
+ 			Expect(err).NotTo(HaveOccurred())
+-			Eventually(session).Should(gbytes.Say(fmt.Sprintf("%s %s ext4 rw,noatime,data=writeback", loopDev, destPath)))
++			Eventually(session).Should(gbytes.Say(fmt.Sprintf("%s %s ext4 rw,noatime", loopDev, destPath)))
++			Expect(session).NotTo(gbytes.Say(",data=writeback"))
+ 		})
+ 
+ 		Context("when using a file that does not exist", func() {
+EOF
+popd
+
 go install -tags daemon github.com/cloudfoundry-incubator/guardian/cmd/guardian/
 go install github.com/cloudfoundry-incubator/guardian/rundmc/iodaemon/cmd/iodaemon
 go install github.com/cloudfoundry-incubator/guardian/cmd/kawasaki/
